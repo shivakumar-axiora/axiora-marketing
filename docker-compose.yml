@@ -1,0 +1,70 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: axiora
+      POSTGRES_PASSWORD: axiora
+      POSTGRES_DB: axiora
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U axiora"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://axiora:axiora@db:5432/axiora
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-}
+      BACKEND_CORS_ORIGINS: http://localhost:5173,http://localhost
+      USE_CELERY: "true"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      ENVIRONMENT: production
+    volumes:
+      - media:/app/media
+    ports:
+      - "8000:8000"
+
+  worker:
+    build: ./backend
+    depends_on:
+      - backend
+      - redis
+    environment:
+      DATABASE_URL: postgresql+psycopg2://axiora:axiora@db:5432/axiora
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-}
+      USE_CELERY: "true"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    volumes:
+      - media:/app/media
+    command: celery -A app.core.celery_app.celery_app worker --loglevel=info --queues=campaigns
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  pgdata:
+  media:
