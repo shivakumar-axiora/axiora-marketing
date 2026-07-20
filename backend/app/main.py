@@ -28,7 +28,8 @@ async def lifespan(app: FastAPI):
         import app.models  # noqa: F401  ensure metadata is populated
 
         Base.metadata.create_all(bind=engine)
-    Path(settings.MEDIA_ROOT).mkdir(parents=True, exist_ok=True)
+    if settings.STORAGE_BACKEND == "local":
+        Path(settings.MEDIA_ROOT).mkdir(parents=True, exist_ok=True)
     yield
 
 
@@ -58,9 +59,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
-# Static media (local storage backend)
-Path(settings.MEDIA_ROOT).mkdir(parents=True, exist_ok=True)
-app.mount("/media", StaticFiles(directory=settings.MEDIA_ROOT), name="media")
+# Static media (only relevant for the local storage backend; S3 URLs are served
+# directly from the bucket/CDN and never touch this app).
+if settings.STORAGE_BACKEND == "local":
+    Path(settings.MEDIA_ROOT).mkdir(parents=True, exist_ok=True)
+    app.mount("/media", StaticFiles(directory=settings.MEDIA_ROOT), name="media")
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     # Database
     DATABASE_URL: str = "sqlite:///./axiora.db"
+    # Set true on serverless hosts (Vercel) so SQLAlchemy opens a fresh connection
+    # per invocation instead of holding a process-local pool between cold starts.
+    DATABASE_SERVERLESS: bool = False
 
     # Celery
     USE_CELERY: bool = False
@@ -32,8 +35,21 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
     # Storage
-    STORAGE_BACKEND: str = "local"
+    STORAGE_BACKEND: str = "local"             # local | s3
     MEDIA_ROOT: str = "./media"
+
+    # S3-compatible storage (AWS S3, Cloudflare R2, Supabase Storage, MinIO, ...)
+    S3_BUCKET: str = ""
+    S3_REGION: str = "us-east-1"
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
+    # Leave empty for AWS S3. Set for R2/MinIO/Supabase, e.g. https://<acct>.r2.cloudflarestorage.com
+    S3_ENDPOINT_URL: str = ""
+    # Public base URL used to build media links. Defaults to the bucket's own
+    # endpoint if empty; set this to a CDN/custom domain fronting the bucket.
+    S3_PUBLIC_URL_BASE: str = ""
+    # R2/MinIO need path-style URLs (endpoint/bucket/key); AWS S3 uses virtual-hosted style.
+    S3_USE_PATH_STYLE: bool = False
 
     # Email
     SMTP_HOST: str = ""
