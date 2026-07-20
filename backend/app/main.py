@@ -36,7 +36,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="1.0.0",
-    docs_url="/docs",
+    # Kept under API_V1_PREFIX so the "/api(/.*)?" rewrite in the root vercel.json
+    # (multi-service deploy) routes /docs and /redoc to this service instead of
+    # falling through to the frontend's catch-all and 404ing on the SPA.
+    docs_url=f"{settings.API_V1_PREFIX}/docs",
+    redoc_url=f"{settings.API_V1_PREFIX}/redoc",
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
     description="Official WhatsApp Business Platform marketing automation API.",
     lifespan=lifespan,
@@ -70,4 +74,4 @@ app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 @app.get("/")
 def root():
-    return {"name": settings.PROJECT_NAME, "version": "1.0.0", "docs": "/docs"}
+    return {"name": settings.PROJECT_NAME, "version": "1.0.0", "docs": f"{settings.API_V1_PREFIX}/docs"}
