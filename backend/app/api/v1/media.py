@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
+from app.models.campaign import Campaign
 from app.models.enums import MediaType
 from app.models.media import Media
 from app.models.user import User
@@ -79,6 +80,15 @@ def rename_media(media_id: int, payload: MediaRename, db: Session = Depends(get_
 @router.delete("/{media_id}", response_model=Message)
 def delete_media(media_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     media = _owned(db, media_id, user)
+    using_campaigns = db.execute(
+        select(Campaign.name).where(Campaign.media_id == media_id)
+    ).scalars().all()
+    if using_campaigns:
+        names = ", ".join(using_campaigns[:3]) + (f" and {len(using_campaigns) - 3} more" if len(using_campaigns) > 3 else "")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Can't delete — still attached to campaign(s): {names}. Remove it from those campaigns first.",
+        )
     get_storage().delete(media.filename)
     db.delete(media)
     db.commit()

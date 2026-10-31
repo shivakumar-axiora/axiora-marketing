@@ -88,13 +88,15 @@ def sync_templates(db: Session = Depends(get_db), user: User = Depends(get_curre
         ).scalar_one_or_none()
         body = ""
         header = ""
+        header_type = ""
         footer = ""
         for comp in tpl.get("components", []):
             ctype = comp.get("type", "").upper()
             if ctype == "BODY":
                 body = comp.get("text", "")
             elif ctype == "HEADER":
-                header = comp.get("text", "")
+                header = comp.get("text", "") or ""
+                header_type = (comp.get("format") or "TEXT").upper()
             elif ctype == "FOOTER":
                 footer = comp.get("text", "")
         category = (tpl.get("category") or "MARKETING").lower()
@@ -105,7 +107,8 @@ def sync_templates(db: Session = Depends(get_db), user: User = Depends(get_curre
             language=tpl.get("language", "en_US"),
             category=TemplateCategory(category) if category in TemplateCategory._value2member_map_ else TemplateCategory.MARKETING,
             status=status_map.get(tpl.get("status", ""), TemplateStatus.APPROVED),
-            body=body, header=header, footer=footer, wa_template_id=str(tpl.get("id", "")),
+            body=body, header=header, header_type=header_type, footer=footer,
+            wa_template_id=str(tpl.get("id", "")),
         )
         if existing:
             for k, v in fields.items():

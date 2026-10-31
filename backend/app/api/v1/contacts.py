@@ -150,12 +150,21 @@ async def import_preview(file: UploadFile = File(...), user: User = Depends(get_
 async def import_contacts(
     file: UploadFile = File(...),
     group_id: Optional[int] = Form(None),
+    default_region: str = Form("US"),
+    name_column: Optional[str] = Form(None),
+    phone_column: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     content = await file.read()
     raw = parse_contacts_file(content, file.filename or "upload.csv")
-    valid, invalid = normalize_rows(raw)
+    # Numbers in the file without a "+"/country code are parsed against this region
+    # (e.g. "IN" for 10-digit Indian mobile numbers) — wrong region silently invalidates them.
+    # name_column/phone_column let the caller map arbitrary headers (e.g. "contact_number")
+    # instead of relying on the file already using "name"/"phone".
+    valid, invalid = normalize_rows(
+        raw, default_region=default_region, name_column=name_column, phone_column=phone_column
+    )
 
     target_group = None
     if group_id:

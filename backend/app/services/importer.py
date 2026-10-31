@@ -26,19 +26,33 @@ def parse_contacts_file(content: bytes, filename: str) -> list[dict]:
     return [{k: str(v).strip() for k, v in row.items()} for row in records]
 
 
-def normalize_rows(rows: Iterable[dict], default_region: str = "US") -> tuple[list[dict], int]:
-    """Validate & normalize phone numbers. Returns (valid_rows, invalid_count)."""
+def normalize_rows(
+    rows: Iterable[dict],
+    default_region: str = "US",
+    name_column: str | None = None,
+    phone_column: str | None = None,
+) -> tuple[list[dict], int]:
+    """Validate & normalize phone numbers. Returns (valid_rows, invalid_count).
+
+    name_column/phone_column let the caller point at whatever the file's actual
+    headers are (e.g. "emp_name"/"contact_number") — falling back to guessing
+    common aliases only when the caller doesn't know/send them.
+    """
     valid: list[dict] = []
     invalid = 0
     for row in rows:
-        raw_phone = row.get("phone") or row.get("phone_number") or row.get("mobile") or ""
+        if phone_column:
+            raw_phone = row.get(phone_column, "")
+        else:
+            raw_phone = row.get("phone") or row.get("phone_number") or row.get("mobile") or ""
         e164, cc = normalize_phone(raw_phone, default_region)
         if not e164:
             invalid += 1
             continue
+        row_name = row.get(name_column, "") if name_column else ""
         valid.append(
             {
-                "name": row.get("name") or row.get("full_name") or "Unknown",
+                "name": row_name or row.get("name") or row.get("full_name") or "Unknown",
                 "phone": e164,
                 "country_code": cc or "",
                 "email": row.get("email", ""),

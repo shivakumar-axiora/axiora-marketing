@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { motion } from "framer-motion";
 import {
   FiSave, FiSend, FiUsers, FiClock, FiSmartphone, FiMail, FiChevronRight, FiChevronLeft,
-  FiFilter, FiTag, FiSearch, FiX, FiGlobe,
+  FiFilter, FiTag, FiSearch, FiX, FiGlobe, FiFile, FiVideo,
 } from "react-icons/fi";
 import PageHeader from "../components/PageHeader";
 import { Card, Spinner, Badge } from "../components/ui";
@@ -29,6 +29,29 @@ const CHANNELS = [
 
 const STEPS = ["Channel", "Details", "Audience", "Message", "Schedule & Review"];
 
+const CONTACT_FIELDS = [
+  { value: "name", label: "Name" },
+  { value: "phone", label: "Phone" },
+  { value: "email", label: "Email" },
+  { value: "company", label: "Company" },
+  { value: "city", label: "City" },
+  { value: "state", label: "State" },
+  { value: "country_code", label: "Country code" },
+];
+
+// Header formats that require a matching media attachment on every send.
+const MEDIA_HEADER_FORMATS = new Set(["IMAGE", "VIDEO", "DOCUMENT"]);
+
+// Meta templates use numbered placeholders ({{1}}, {{2}}, …) in the body.
+function extractTemplateVarKeys(body) {
+  if (!body) return [];
+  const keys = new Set();
+  const re = /{{\s*(\d+)\s*}}/g;
+  let m;
+  while ((m = re.exec(body))) keys.add(m[1]);
+  return [...keys].sort((a, b) => Number(a) - Number(b));
+}
+
 export default function CampaignBuilder() {
   const { id } = useParams();
   const isEdit = !!id;
@@ -51,6 +74,7 @@ export default function CampaignBuilder() {
     schedule_type: "immediate",
     scheduled_at: "", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     template_id: "", media_id: "", group_ids: [], segment_ids: [], contact_ids: [], all_contacts: false,
+    template_variables: {},
   });
 
   useEffect(() => {
@@ -64,6 +88,7 @@ export default function CampaignBuilder() {
           subject: data.subject || "", message_body: data.message_body || "",
           schedule_type: data.schedule_type, scheduled_at: data.scheduled_at ? data.scheduled_at.slice(0, 16) : "",
           timezone: data.timezone, template_id: data.template_id || "", media_id: data.media_id || "",
+          template_variables: data.template_variables || {},
         }));
         setLoading(false);
       }).catch(() => setLoading(false));
@@ -122,6 +147,30 @@ export default function CampaignBuilder() {
   const isEmail = form.channel === "email";
   const channelTemplates = templates.filter((t) => (t.channel || "whatsapp") === form.channel);
   const hasAudience = form.all_contacts || form.group_ids.length > 0 || form.segment_ids.length > 0 || form.contact_ids.length > 0;
+  const selectedTemplate = channelTemplates.find((t) => String(t.id) === String(form.template_id));
+  const templateNotApproved = !isEmail && !!selectedTemplate && selectedTemplate.status !== "approved";
+  const templateVarKeys = !isEmail && selectedTemplate ? extractTemplateVarKeys(selectedTemplate.body) : [];
+  const templateHeaderType = (selectedTemplate?.header_type || "").toUpperCase();
+  const templateNeedsMedia = !isEmail && MEDIA_HEADER_FORMATS.has(templateHeaderType);
+  const missingHeaderMedia = templateNeedsMedia && !form.media_id;
+  const selectedMedia = media.find((m) => String(m.id) === String(form.media_id));
+  const headerMediaMismatch = !isEmail && templateNeedsMedia && !!selectedMedia
+    && selectedMedia.media_type?.toUpperCase() !== templateHeaderType;
+  const missingVarMapping = templateVarKeys.some((k) => !form.template_variables?.[k]);
+
+  // Keep the variable mapping in sync with whichever template is currently selected —
+  // default {{1}} to "name" since that's the overwhelmingly common case, leave the rest for the user to pick.
+  useEffect(() => {
+    if (isEmail || !selectedTemplate) return;
+    const keys = extractTemplateVarKeys(selectedTemplate.body);
+    if (keys.length === 0) return;
+    setForm((f) => {
+      const next = {};
+      keys.forEach((k) => { next[k] = f.template_variables?.[k] || (k === "1" ? "name" : ""); });
+      return { ...f, template_variables: next };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.template_id]);
 
   const buildPayload = () => ({
     name: form.name, description: form.description, channel: form.channel, subject: form.subject,
@@ -131,6 +180,8 @@ export default function CampaignBuilder() {
     timezone: form.timezone,
     template_id: form.template_id ? Number(form.template_id) : null,
     media_id: !isEmail && form.media_id ? Number(form.media_id) : null,
+    template_variables: !isEmail && form.template_id && Object.keys(form.template_variables || {}).length
+      ? form.template_variables : null,
     group_ids: form.group_ids, segment_ids: form.segment_ids, contact_ids: form.contact_ids,
     all_contacts: form.all_contacts,
   });
@@ -139,6 +190,9 @@ export default function CampaignBuilder() {
     if (!form.name.trim()) { toast.error("Campaign name is required"); setStep(1); return; }
     if (isEmail && !form.subject.trim()) { toast.error("Subject line is required for email campaigns"); setStep(3); return; }
     if (!hasAudience) { toast.error("Select an audience — all contacts, a segment, a group, or specific contacts"); setStep(2); return; }
+    if (thenSend && templateNotApproved) { toast.error("This WhatsApp template isn't approved in Meta yet — sending is blocked until it is"); setStep(3); return; }
+    if (thenSend && missingVarMapping) { toast.error("Map every template variable to a contact field before sending"); setStep(3); return; }
+    if (thenSend && missingHeaderMedia) { toast.error(`This template needs a ${templateHeaderType.toLowerCase()} header — attach one before sending`); setStep(3); return; }
     setSaving(true);
     try {
       let campaignId = id;
@@ -312,16 +366,57 @@ export default function CampaignBuilder() {
                     <label className="label">Template (optional)</label>
                     <select className="input" value={form.template_id} onChange={(e) => set({ template_id: e.target.value })}>
                       <option value="">None — free text</option>
-                      {channelTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}{!isEmail && ` (${t.language})`}</option>)}
+                      {channelTemplates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}{!isEmail && ` (${t.language}${t.status !== "approved" ? ` · ${t.status}` : ""})`}
+                        </option>
+                      ))}
                     </select>
+                    {!isEmail && channelTemplates.length === 0 && (
+                      <p className="mt-1.5 text-xs text-ink-500">
+                        No WhatsApp templates yet. <Link to="/templates" className="text-brand-600 underline">Create or sync one</Link>, or send as free text.
+                      </p>
+                    )}
+                    {templateNotApproved && (
+                      <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+                        Not approved in Meta yet — sending will be blocked until it is. <Link to="/templates" className="underline">Manage templates</Link>
+                      </p>
+                    )}
                   </div>
+                  {!isEmail && templateVarKeys.length > 0 && (
+                    <div className="sm:col-span-2 rounded-xl border border-ink-200 p-3 dark:border-slate-600">
+                      <p className="mb-2 text-xs font-semibold uppercase text-ink-500">Map template variables</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {templateVarKeys.map((k) => (
+                          <div key={k} className="flex items-center gap-2">
+                            <span className="w-10 shrink-0 font-mono text-sm text-ink-500">{`{{${k}}}`}</span>
+                            <select className="input" value={form.template_variables?.[k] || ""}
+                              onChange={(e) => set({ template_variables: { ...form.template_variables, [k]: e.target.value } })}>
+                              <option value="">Select a field…</option>
+                              {CONTACT_FIELDS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {!isEmail && (
                     <div>
-                      <label className="label">Attach media (optional)</label>
+                      <label className="label">Attach media {templateNeedsMedia ? `(required — ${templateHeaderType.toLowerCase()} header)` : "(optional)"}</label>
                       <select className="input" value={form.media_id} onChange={(e) => set({ media_id: e.target.value })}>
                         <option value="">None</option>
                         {media.map((m) => <option key={m.id} value={m.id}>{m.original_name}</option>)}
                       </select>
+                      {missingHeaderMedia && (
+                        <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+                          This template's header is a {templateHeaderType.toLowerCase()} — attach a matching file or sending will be blocked.
+                        </p>
+                      )}
+                      {headerMediaMismatch && (
+                        <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+                          The template header expects {templateHeaderType.toLowerCase()}, but the attached file is {selectedMedia.media_type} — Meta will likely reject the send.
+                        </p>
+                      )}
                     </div>
                   )}
                   {isEmail && (
@@ -356,6 +451,17 @@ export default function CampaignBuilder() {
                     <div><label className="label">Timezone</label><input className="input" value={form.timezone} onChange={(e) => set({ timezone: e.target.value })} /></div>
                   </div>
                 )}
+                {templateNotApproved && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                    The selected template ("{selectedTemplate?.name}") isn't approved in Meta yet, so sending is blocked.
+                    Submit/approve it in Meta Business Manager, sync it on the <Link to="/templates" className="underline">Templates page</Link>, then come back to send — or save as a draft for now.
+                  </div>
+                )}
+                {missingHeaderMedia && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                    The selected template's header requires a {templateHeaderType.toLowerCase()} — go back to the <button type="button" className="underline" onClick={() => setStep(3)}>Message step</button> and attach one, or sending is blocked.
+                  </div>
+                )}
               </Card>
             )}
           </motion.div>
@@ -367,7 +473,8 @@ export default function CampaignBuilder() {
             ) : (
               <div className="flex gap-2">
                 <button className="btn-secondary" onClick={() => save(false)} disabled={saving}><FiSave /> Save draft</button>
-                <button className="btn-primary" onClick={() => save(true)} disabled={saving}>
+                <button className="btn-primary" onClick={() => save(true)} disabled={saving || templateNotApproved || missingHeaderMedia}
+                  title={templateNotApproved ? "Template isn't approved in Meta yet" : missingHeaderMedia ? "Template requires a header attachment" : undefined}>
                   {saving ? <Spinner /> : <><FiSend /> {form.schedule_type === "immediate" ? "Send now" : "Schedule"}</>}
                 </button>
               </div>
@@ -391,11 +498,26 @@ export default function CampaignBuilder() {
               </div>
             ) : (
               <div className="rounded-2xl bg-[#e5ddd5] p-3">
-                <div className="max-w-[90%] rounded-xl rounded-tl-none bg-white p-3 text-sm shadow">
-                  <p className="whitespace-pre-wrap text-ink-900">
-                    {form.message_body?.replace(/{{\s*name\s*}}/gi, "Aarav").replace(/{{\s*company\s*}}/gi, "Acme Corp").replace(/{{\s*city\s*}}/gi, "Mumbai") || "Your message…"}
-                  </p>
-                  <p className="mt-1 text-right text-[10px] text-ink-400">12:30 ✓✓</p>
+                <div className="max-w-[90%] overflow-hidden rounded-xl rounded-tl-none bg-white text-sm shadow">
+                  {selectedMedia && (
+                    selectedMedia.media_type === "image" ? (
+                      <img src={selectedMedia.url} alt={selectedMedia.original_name} className="h-40 w-full object-cover" />
+                    ) : selectedMedia.media_type === "video" ? (
+                      <div className="flex h-40 w-full items-center justify-center bg-ink-100 text-ink-400 dark:bg-slate-700">
+                        <FiVideo className="h-8 w-8" />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 border-b border-ink-100 bg-ink-50 p-3 text-ink-600 dark:border-slate-700 dark:bg-slate-700/40">
+                        <FiFile className="h-4 w-4 shrink-0" /> <span className="truncate text-xs">{selectedMedia.original_name}</span>
+                      </div>
+                    )
+                  )}
+                  <div className="p-3">
+                    <p className="whitespace-pre-wrap text-ink-900">
+                      {form.message_body?.replace(/{{\s*name\s*}}/gi, "Aarav").replace(/{{\s*company\s*}}/gi, "Acme Corp").replace(/{{\s*city\s*}}/gi, "Mumbai") || "Your message…"}
+                    </p>
+                    <p className="mt-1 text-right text-[10px] text-ink-400">12:30 ✓✓</p>
+                  </div>
                 </div>
               </div>
             )}

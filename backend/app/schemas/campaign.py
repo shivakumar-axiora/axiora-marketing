@@ -1,8 +1,9 @@
 """Campaign schemas."""
+import json
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import CampaignStatus, Channel, MessageStatus, ScheduleType
 
@@ -60,6 +61,7 @@ class CampaignOut(BaseModel):
     timezone: str
     template_id: Optional[int] = None
     media_id: Optional[int] = None
+    template_variables: Optional[Dict[str, str]] = None
     total_recipients: int
     sent_count: int
     delivered_count: int
@@ -67,6 +69,18 @@ class CampaignOut(BaseModel):
     failed_count: int
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("template_variables", mode="before")
+    @classmethod
+    def _parse_template_variables(cls, v):
+        if isinstance(v, str):
+            if not v:
+                return None
+            try:
+                return json.loads(v)
+            except (ValueError, TypeError):
+                return None
+        return v
 
 
 class RecipientOut(BaseModel):
@@ -78,6 +92,7 @@ class RecipientOut(BaseModel):
     rendered_subject: Optional[str] = ""
     rendered_message: Optional[str] = ""
     status: MessageStatus
+    error_code: Optional[str] = ""
     error_message: Optional[str] = ""
     retries: int
     sent_at: Optional[datetime] = None

@@ -83,6 +83,20 @@ export default function Templates() {
         </div>
       )}
 
+      {!isEmail && !loading && templates?.length > 0 && !templates.some((t) => t.status === "approved") && (
+        <div className="mb-4 flex flex-col items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm sm:flex-row sm:items-center dark:border-amber-500/30 dark:bg-amber-500/10">
+          <div>
+            <p className="font-medium text-amber-800 dark:text-amber-300">No approved WhatsApp templates yet</p>
+            <p className="text-amber-700/80 dark:text-amber-300/70">
+              Campaigns can't send with a template until Meta approves it. Create/submit it in Meta Business Manager, then sync it here.
+            </p>
+          </div>
+          <button className="btn-secondary shrink-0" onClick={sync} disabled={syncing}>
+            <FiRefreshCw className={cx(syncing && "animate-spin")} /> Sync from Meta
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-16"><Spinner className="h-7 w-7 text-brand-500" /></div>
       ) : templates?.length === 0 ? (

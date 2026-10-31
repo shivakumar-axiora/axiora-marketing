@@ -17,5 +17,5 @@ COPY . .
 
 EXPOSE 8000
 
-# Entrypoint seeds the DB (idempotent) then launches the API.
-CMD ["sh", "-c", "python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Entrypoint applies migrations, seeds the DB (idempotent), then launches the API.
+CMD ["sh", "-c", "alembic upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

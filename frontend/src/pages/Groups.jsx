@@ -11,6 +11,7 @@ import { groupsApi, contactsApi } from "../services/endpoints";
 import { useFetch } from "../hooks/useFetch";
 import { getErrorMessage } from "../services/api";
 import { cx } from "../utils/format";
+import { IMPORT_REGIONS, NAME_ALIASES, PHONE_ALIASES, guessColumn } from "./Contacts";
 
 const COLORS = ["#25D366", "#3B82F6", "#F59E0B", "#8B5CF6", "#EF4444", "#10B981", "#EC4899", "#0EA5E9"];
 
@@ -213,6 +214,9 @@ function GroupImportPanel({ group }) {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
+  const [region, setRegion] = useState("IN");
+  const [nameCol, setNameCol] = useState("");
+  const [phoneCol, setPhoneCol] = useState("");
   const inputRef = useRef();
 
   const pick = async (f) => {
@@ -224,14 +228,20 @@ function GroupImportPanel({ group }) {
     try {
       const { data } = await contactsApi.importPreview(form);
       setPreview(data);
+      setNameCol(guessColumn(data.columns, NAME_ALIASES));
+      setPhoneCol(guessColumn(data.columns, PHONE_ALIASES));
     } catch (e) { toast.error(getErrorMessage(e)); }
   };
 
   const doImport = async () => {
+    if (!phoneCol) { toast.error("Select which column has the phone number"); return; }
     setBusy(true);
     const form = new FormData();
     form.append("file", file);
     form.append("group_id", group.id);
+    form.append("default_region", region);
+    form.append("name_column", nameCol);
+    form.append("phone_column", phoneCol);
     try {
       const { data } = await contactsApi.import(form);
       toast.success(`Imported ${data.imported} · ${data.duplicates} duplicates · ${data.invalid} invalid`);
@@ -260,6 +270,28 @@ function GroupImportPanel({ group }) {
   ) : (
     <div>
       <p className="mb-3 text-sm text-ink-500">Previewing first {preview.rows.length} of <b>{preview.total}</b> rows.</p>
+      <div className="mb-3 grid gap-3 sm:grid-cols-3">
+        <div>
+          <label className="label">Name column</label>
+          <select className="input" value={nameCol} onChange={(e) => setNameCol(e.target.value)}>
+            <option value="">(none)</option>
+            {preview.columns.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">Phone column *</label>
+          <select className="input" value={phoneCol} onChange={(e) => setPhoneCol(e.target.value)}>
+            <option value="">Select…</option>
+            {preview.columns.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">Phone format (no country code)</label>
+          <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
+            {IMPORT_REGIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </div>
+      </div>
       <div className="max-h-56 overflow-auto rounded-xl border border-ink-100 dark:border-slate-700">
         <table className="w-full text-xs">
           <thead className="bg-ink-50 dark:bg-slate-700/40">

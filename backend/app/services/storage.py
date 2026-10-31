@@ -42,6 +42,9 @@ class LocalStorage(Storage):
             path.unlink()
 
     def url_for(self, filename: str) -> str:
+        # Relative path: the frontend (nginx/Vite) proxies /media/* to this backend,
+        # so the browser never needs an absolute URL. Meta needs a fetchable absolute
+        # URL when we actually send — see public_media_url(), applied at send time.
         return f"/media/{filename}"
 
 
@@ -92,3 +95,15 @@ def get_storage() -> Storage:
     if settings.STORAGE_BACKEND == "s3":
         return S3Storage()
     return LocalStorage()
+
+
+def public_media_url(url: str) -> str:
+    """Resolve a stored media URL to one Meta's servers can fetch.
+
+    S3 URLs are already absolute. Local-storage URLs are relative (browser-facing,
+    served via the frontend's own proxy) and need PUBLIC_BASE_URL prefixed here,
+    at the point we actually hand a link to the WhatsApp API.
+    """
+    if not url.startswith("/"):
+        return url
+    return f"{settings.PUBLIC_BASE_URL.rstrip('/')}{url}"

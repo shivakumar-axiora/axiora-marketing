@@ -22,6 +22,7 @@ class Template(Base, PKMixin, TimestampMixin):
     html_body: Mapped[Optional[str]] = mapped_column(Text, default="")  # email only
     body: Mapped[str] = mapped_column(Text, default="")
     header: Mapped[Optional[str]] = mapped_column(String(255), default="")
+    header_type: Mapped[Optional[str]] = mapped_column(String(20), default="")  # "" | TEXT | IMAGE | VIDEO | DOCUMENT
     footer: Mapped[Optional[str]] = mapped_column(String(255), default="")
     example_variables: Mapped[Optional[str]] = mapped_column(Text, default="")  # JSON
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -16,6 +16,35 @@ import { formatDate, cx } from "../utils/format";
 
 const STATUSES = ["active", "inactive", "blocked", "unsubscribed"];
 
+// Used to interpret phone numbers in an imported file that have no "+"/country code.
+export const IMPORT_REGIONS = [
+  { value: "IN", label: "India (+91)" },
+  { value: "US", label: "United States (+1)" },
+  { value: "GB", label: "United Kingdom (+44)" },
+  { value: "AE", label: "UAE (+971)" },
+  { value: "SG", label: "Singapore (+65)" },
+  { value: "AU", label: "Australia (+61)" },
+  { value: "CA", label: "Canada (+1)" },
+];
+
+export const NAME_ALIASES = ["name", "full_name", "emp_name", "employee_name", "contact_name"];
+export const PHONE_ALIASES = ["phone", "phone_number", "mobile", "contact_number", "contact", "mobile_number", "phone_no", "mobile_no"];
+
+// Best-effort guess at which column holds a field, so most files "just work" —
+// the user can still override it, since header names vary wildly between files.
+export function guessColumn(columns, aliases) {
+  const lower = columns.map((c) => c.toLowerCase());
+  for (const alias of aliases) {
+    const idx = lower.findIndex((c) => c === alias);
+    if (idx !== -1) return columns[idx];
+  }
+  for (const alias of aliases) {
+    const idx = lower.findIndex((c) => c.includes(alias));
+    if (idx !== -1) return columns[idx];
+  }
+  return "";
+}
+
 export default function Contacts() {
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState({ total: 0, pages: 1 });
@@ -311,6 +340,9 @@ function ImportModal({ onClose, onDone }) {
   const [preview, setPreview] = useState(null);
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [region, setRegion] = useState("IN");
+  const [nameCol, setNameCol] = useState("");
+  const [phoneCol, setPhoneCol] = useState("");
   const inputRef = useRef();
 
   const pick = async (f) => {
@@ -321,13 +353,19 @@ function ImportModal({ onClose, onDone }) {
     try {
       const { data } = await contactsApi.importPreview(form);
       setPreview(data);
+      setNameCol(guessColumn(data.columns, NAME_ALIASES));
+      setPhoneCol(guessColumn(data.columns, PHONE_ALIASES));
     } catch (e) { toast.error(getErrorMessage(e)); }
   };
 
   const doImport = async () => {
+    if (!phoneCol) { toast.error("Select which column has the phone number"); return; }
     setBusy(true);
     const form = new FormData();
     form.append("file", file);
+    form.append("default_region", region);
+    form.append("name_column", nameCol);
+    form.append("phone_column", phoneCol);
     try {
       const { data } = await contactsApi.import(form);
       toast.success(`Imported ${data.imported} · ${data.duplicates} duplicates · ${data.invalid} invalid`);
@@ -349,6 +387,28 @@ function ImportModal({ onClose, onDone }) {
       ) : (
         <div>
           <p className="mb-3 text-sm text-ink-500">Previewing first {preview.rows.length} of <b>{preview.total}</b> rows.</p>
+          <div className="mb-3 grid gap-3 sm:grid-cols-3">
+            <div>
+              <label className="label">Name column</label>
+              <select className="input" value={nameCol} onChange={(e) => setNameCol(e.target.value)}>
+                <option value="">(none)</option>
+                {preview.columns.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Phone column *</label>
+              <select className="input" value={phoneCol} onChange={(e) => setPhoneCol(e.target.value)}>
+                <option value="">Select…</option>
+                {preview.columns.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Phone format (no country code)</label>
+              <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
+                {IMPORT_REGIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+          </div>
           <div className="overflow-x-auto rounded-xl border border-ink-100 dark:border-slate-700">
             <table className="w-full text-xs">
               <thead className="bg-ink-50 dark:bg-slate-700/40">

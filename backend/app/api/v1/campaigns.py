@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.campaign import Campaign, CampaignLog, CampaignRecipient
 from app.models.contact import Contact
-from app.models.enums import CampaignStatus, Channel, MessageStatus, ScheduleType
+from app.models.enums import CampaignStatus, Channel, MessageStatus, ScheduleType, TemplateStatus
 from app.models.user import User
 from app.schemas.campaign import (
     CampaignCreate,
@@ -201,6 +201,14 @@ def send_campaign(
     if campaign.status not in (CampaignStatus.DRAFT, CampaignStatus.SCHEDULED, CampaignStatus.FAILED,
                                CampaignStatus.CANCELLED):
         raise HTTPException(status_code=400, detail=f"Cannot send a {campaign.status.value} campaign")
+    if campaign.channel == Channel.WHATSAPP and campaign.template_id:
+        if not campaign.template or campaign.template.status != TemplateStatus.APPROVED:
+            raise HTTPException(
+                status_code=400,
+                detail="This campaign's WhatsApp template is not approved yet. "
+                       "Create/submit it in Meta Business Manager, wait for approval, "
+                       "then sync templates before sending.",
+            )
 
     if campaign.schedule_type != ScheduleType.IMMEDIATE and campaign.scheduled_at:
         campaign.status = CampaignStatus.SCHEDULED

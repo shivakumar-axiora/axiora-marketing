@@ -14,6 +14,16 @@ import { formatDateTime, cx } from "../utils/format";
 
 const LIVE_STATUSES = ["running", "scheduled", "paused"];
 
+// Plain-language explanations for WhatsApp Cloud API error codes we've seen in
+// practice — Meta's raw message is technically accurate but easy to misread as a
+// bug in this app when most of these are policy/config issues on the Meta side.
+const WHATSAPP_ERROR_HELP = {
+  "131049": "Meta throttled this to protect delivery quality — not a bug here. Common on newer/low quality-rated numbers or with recipients who haven't engaged with your business before. Retrying won't help; it improves as your number's quality rating goes up.",
+  "132001": "The template name/language Meta received doesn't match an approved template. Re-sync templates from Meta and confirm the language matches exactly.",
+  "132012": "The data sent for a template variable/header doesn't match what the approved template expects (e.g. a required header image was missing).",
+  "100": "Meta rejected part of the request as invalid — see the message above for which field it flagged.",
+};
+
 export default function CampaignDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -154,7 +164,12 @@ export default function CampaignDetail() {
                         <td className="max-w-xs truncate px-4 py-2.5 text-ink-500" title={r.rendered_message}>{c.channel === "email" ? (r.rendered_subject || r.rendered_message) : r.rendered_message}</td>
                         <td className="px-4 py-2.5"><StatusBadge status={r.status} type="message" /></td>
                         <td className="px-4 py-2.5 text-ink-500">{r.sent_at ? formatDateTime(r.sent_at) : "—"}</td>
-                        <td className="px-4 py-2.5 text-xs text-red-500">{r.error_message || "—"}</td>
+                        <td className="max-w-xs px-4 py-2.5 text-xs text-red-500">
+                          {r.error_message || "—"}
+                          {r.error_code && WHATSAPP_ERROR_HELP[r.error_code] && (
+                            <p className="mt-1 text-ink-400">{WHATSAPP_ERROR_HELP[r.error_code]}</p>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

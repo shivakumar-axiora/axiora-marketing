@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # Storage
     STORAGE_BACKEND: str = "local"             # local | s3
     MEDIA_ROOT: str = "./media"
+    # Public URL this backend is reachable at (e.g. an ngrok tunnel in dev, or your
+    # production domain). Required for locally-stored media links to work with
+    # WhatsApp template headers — Meta fetches them over the public internet, so a
+    # bare "localhost" or relative path is not fetchable. Not needed with STORAGE_BACKEND=s3.
+    PUBLIC_BASE_URL: str = ""
 
     # S3-compatible storage (AWS S3, Cloudflare R2, Supabase Storage, MinIO, ...)
     S3_BUCKET: str = ""

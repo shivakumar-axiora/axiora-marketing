@@ -37,6 +37,10 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       ENVIRONMENT: production
+      # Set in a repo-root .env (e.g. PUBLIC_BASE_URL=https://xxxx.ngrok-free.app)
+      # so locally-stored media gets a link Meta can actually fetch. Required for
+      # WhatsApp template headers that reference uploaded media; blank breaks those sends.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
     volumes:
       - media:/app/media
     ports:

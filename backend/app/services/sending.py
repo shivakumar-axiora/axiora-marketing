@@ -19,9 +19,10 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.campaign import Campaign, CampaignLog, CampaignRecipient
-from app.models.enums import CampaignStatus, Channel, MessageStatus
+from app.models.enums import CampaignStatus, Channel, MessageStatus, TemplateStatus
 from app.services.messaging import contact_context
 from app.services.resend_client import ResendClient, ResendError
+from app.services.storage import public_media_url
 from app.services.whatsapp import WhatsAppClient, WhatsAppError
 
 logger = logging.getLogger("axiora.sending")
@@ -90,6 +91,19 @@ def run_campaign(campaign_id: int) -> None:
                 _log(db, campaign_id, "error", str(exc), level="error")
                 return
 
+            if campaign.template_id and (
+                not campaign.template or campaign.template.status != TemplateStatus.APPROVED
+            ):
+                campaign.status = CampaignStatus.FAILED
+                db.commit()
+                _log(
+                    db, campaign_id, "error",
+                    "WhatsApp template is not approved in Meta yet. Submit it in Meta "
+                    "Business Manager, wait for approval, then sync templates and resend.",
+                    level="error",
+                )
+                return
+
         campaign.status = CampaignStatus.RUNNING
         db.commit()
         _log(db, campaign_id, "campaign_started", f"Sending to {campaign.total_recipients} recipients")
@@ -137,21 +151,32 @@ def run_campaign(campaign_id: int) -> None:
 
 
 def _build_template_components(campaign: Campaign, recipient: CampaignRecipient) -> list:
-    """Build WhatsApp body components from campaign variable mappings."""
-    if not campaign.template_variables:
-        return []
-    try:
-        var_map: dict = json.loads(campaign.template_variables)  # e.g. {"1": "name", "2": "company"}
-    except (ValueError, TypeError):
-        return []
-    if not var_map:
-        return []
-    ctx = contact_context(recipient.contact)
-    params = [
-        {"type": "text", "text": ctx.get(var_map[k], "")}
-        for k in sorted(var_map.keys(), key=lambda x: int(x) if x.isdigit() else x)
-    ]
-    return [{"type": "body", "parameters": params}]
+    """Build WhatsApp header/body components from the campaign's attached media and variable mappings."""
+    components = []
+
+    # Templates whose header format is Image/Video/Document require a matching header
+    # parameter in every send — Meta rejects the message otherwise (error 132012).
+    if campaign.media_id and campaign.media:
+        media_type = campaign.media.media_type.value
+        components.append({
+            "type": "header",
+            "parameters": [{"type": media_type, media_type: {"link": public_media_url(campaign.media.url)}}],
+        })
+
+    if campaign.template_variables:
+        try:
+            var_map: dict = json.loads(campaign.template_variables)  # e.g. {"1": "name", "2": "company"}
+        except (ValueError, TypeError):
+            var_map = {}
+        if var_map:
+            ctx = contact_context(recipient.contact)
+            params = [
+                {"type": "text", "text": ctx.get(var_map[k], "")}
+                for k in sorted(var_map.keys(), key=lambda x: int(x) if x.isdigit() else x)
+            ]
+            components.append({"type": "body", "parameters": params})
+
+    return components
 
 
 def _send_one(
@@ -178,7 +203,7 @@ def _send_one(
             resp = client.send_media(
                 to=recipient.phone,
                 media_type=campaign.media.media_type.value,
-                link=campaign.media.url,
+                link=public_media_url(campaign.media.url),
                 caption=recipient.rendered_message or "",
             )
             msgs = resp.get("messages") if isinstance(resp, dict) else None

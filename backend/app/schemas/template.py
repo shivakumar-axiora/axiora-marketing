@@ -43,6 +43,7 @@ class TemplateOut(TemplateBase):
     status: TemplateStatus
     is_favorite: bool
     wa_template_id: Optional[str] = ""
+    header_type: Optional[str] = ""
     created_at: datetime
 
 
